@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <linux/cdev.h>
+#include <linux/device.h>
 #include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/module.h>
@@ -68,13 +69,18 @@ static const struct file_operations dev_fops = {
 #define DEVICE_FIRST 0
 #define DEVICE_COUNT 3
 #define MODNAME "my_cdev"
+#define DEVICE_NAME "my_cdev"
+#define CLASS_NAME "my_cdev"
 
 static struct cdev hcdev;
+static struct class *devclass;
 
 static int __init my_cdev_init(void)
 {
 	int ret = 0;
 	dev_t dev;
+	char dev_name[32];
+	int i;
 
 	if (major != 0) {
 		dev = MKDEV(major, DEVICE_FIRST);
@@ -101,8 +107,17 @@ static int __init my_cdev_init(void)
 		goto err;
 	}
 
-	pr_info("========= module installed %d:%d =========\n",
-		MAJOR(dev), MINOR(dev));
+	devclass = class_create(THIS_MODULE, CLASS_NAME);
+
+	for (i = 0; i < DEVICE_COUNT; i++) {
+		sprintf(dev_name, "%s_%d", DEVICE_NAME, i);
+
+		dev = MKDEV(major, DEVICE_FIRST + i);
+		device_create(devclass, NULL, dev, "%s", dev_name);
+	}
+
+	pr_info("========= module installed %d:[%d-%d] =========\n",
+		MAJOR(dev), DEVICE_FIRST, MINOR(dev));
 
 err:
 	return ret;
@@ -110,6 +125,15 @@ err:
 
 static void __exit my_cdev_exit(void)
 {
+	dev_t dev;
+	int i;
+
+	for (i = 0; i < DEVICE_COUNT; i++) {
+		dev = MKDEV(major, DEVICE_FIRST + i);
+		device_destroy(devclass, dev);
+	}
+
+	class_destroy(devclass);
 	cdev_del(&hcdev);
 	unregister_chrdev_region(MKDEV(major, DEVICE_FIRST),
 				 DEVICE_COUNT);
